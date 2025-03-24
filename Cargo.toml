@@ -1,0 +1,19 @@
+[package]
+name = "rust-sky-answ"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+scraper = "0.18"
+regex = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.21"
+rand = "0.8"
+anyhow = "1.0"
+teloxide = { version = "0.12", features = ["macros"] }
+log = "0.4"
+pretty_env_logger = "0.4"
+dotenv = "0.15.0"
