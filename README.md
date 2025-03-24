@@ -17,7 +17,7 @@ Telegram-бот на Rust для получения ответов на зада
 
 ```bash
 # Скачиваем образ из GitHub Container Registry
-docker pull ghcr.io/myrsgral/rust-sky-answ:latest
+docker pull ghcr.io/myrsgral/rust-sky-answ:1.0.0
 
 # Запускаем контейнер с указанием токена бота Telegram
-docker run -d --name rust-sky-answ -e TELOXIDE_TOKEN=ваш_токен_бота ghcr.io/myrsgral/rust-sky-answ:latest
+docker run -d --name rust-sky-answ -e TELOXIDE_TOKEN=ваш_токен_бота ghcr.io/myrsgral/rust-sky-answ:1.0.0
