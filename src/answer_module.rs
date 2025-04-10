@@ -1,7 +1,7 @@
 use std::error::Error;
 use scraper::{Html, Selector};
 use regex::Regex;
-use base64::decode;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use anyhow::Result;
 
 use crate::skysmart_api::SkysmartAPIClient;
@@ -14,7 +14,6 @@ pub fn remove_extra_newlines(text: &str) -> String {
 #[derive(Debug)]
 pub struct TaskAnswer {
     pub question: String,
-    pub full_question: String,
     pub answers: Vec<String>,
     pub task_number: usize,
 }
@@ -32,9 +31,15 @@ impl SkyAnswers {
         let mut answers_list = Vec::new();
         let mut client = SkysmartAPIClient::new();
 
+        // Ограничим количество обрабатываемых задач для предотвращения чрезмерного потребления памяти
+        const MAX_TASKS: usize = 50;
+
         match client.get_room(&self.task_hash).await {
             Ok(tasks_uuids) => {
-                for (idx, uuid) in tasks_uuids.iter().enumerate() {
+                // Ограничиваем количество задач, которые обрабатываем
+                let tasks_to_process = tasks_uuids.iter().take(MAX_TASKS);
+                
+                for (idx, uuid) in tasks_to_process.enumerate() {
                     match client.get_task_html(uuid).await {
                         Ok(task_html) => {
                             let document = Html::parse_document(&task_html);
@@ -42,6 +47,8 @@ impl SkyAnswers {
                                 Ok(task_answer) => answers_list.push(task_answer),
                                 Err(e) => eprintln!("Error parsing task {}: {}", idx + 1, e),
                             }
+                            // Очищаем HTML-документ из памяти после использования
+                            drop(document);
                         },
                         Err(e) => {
                             eprintln!("Error fetching task HTML for UUID {}: {}", uuid, e);
@@ -53,6 +60,9 @@ impl SkyAnswers {
                 eprintln!("Error in get_answers: {}", e);
             }
         }
+
+        // Явно закрываем клиент для освобождения ресурсов
+        client.close().await?;
 
         Ok(answers_list)
     }
@@ -122,7 +132,7 @@ impl SkyAnswers {
         if let Ok(selector) = Selector::parse("vim-groups-item") {
             for item in document.select(&selector) {
                 if let Some(encoded_text) = item.value().attr("text") {
-                    match decode(encoded_text) {
+                    match BASE64.decode(encoded_text) {
                         Ok(decoded) => {
                             if let Ok(text) = String::from_utf8(decoded) {
                                 answers.push(text);
@@ -135,11 +145,9 @@ impl SkyAnswers {
         }
 
         let question = self.extract_task_full_question(document);
-        let full_question = question.clone();
 
         Ok(TaskAnswer {
             question,
-            full_question,
             answers,
             task_number,
         })

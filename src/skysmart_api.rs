@@ -30,6 +30,11 @@ impl SkysmartAPIClient {
         browsers[idx].to_string()
     }
 
+    pub async fn close(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        self.token.clear();
+        Ok(())
+    }
+
     async fn authenticate(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let resp = self.client
             .post(api_constants::URL_AUTH2)
@@ -73,11 +78,12 @@ impl SkysmartAPIClient {
     pub async fn get_room(&mut self, task_hash: &str) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
         #[derive(Serialize)]
         struct Payload {
-            taskHash: String,
+            #[serde(rename = "taskHash")]
+            task_hash: String,
         }
 
         let payload = Payload {
-            taskHash: task_hash.to_string(),
+            task_hash: task_hash.to_string(),
         };
 
         let headers = self.get_headers().await?;

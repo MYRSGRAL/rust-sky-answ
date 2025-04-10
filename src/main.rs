@@ -30,21 +30,6 @@ pub struct Solution {
     pub answers: Vec<String>,
 }
 
-struct SkyAnswers {
-    task_hash: String,
-}
-
-impl SkyAnswers {
-    pub fn new(task_hash: String) -> Self {
-        Self { task_hash }
-    }
-
-    pub async fn get_answers(&self) -> Result<Vec<Solution>, Box<dyn StdError + Send + Sync + 'static>> {
-        Ok(vec![])
-    }
-}
-
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     pretty_env_logger::init();
@@ -101,12 +86,11 @@ async fn message_handler(bot: Bot, msg: Message) -> ResponseResult<()> {
             return Ok(());
         }
 
-        let mut task_hash = trimmed.to_string();
-
-        task_hash = task_hash
+        let task_hash = trimmed
             .replace("https://edu.skysmart.ru/student/", "")
             .replace("http://edu.skysmart.ru/student/", "")
             .replace("edu.skysmart.ru/student/", "");
+            
         if task_hash.is_empty() || task_hash.len() < 5 {
             bot.send_message(msg.chat.id, "⚠️ Неверный формат ссылки. Отправьте полную ссылку на задание.").await?;
             return Ok(());
@@ -120,54 +104,62 @@ async fn message_handler(bot: Bot, msg: Message) -> ResponseResult<()> {
             }
         };
 
-        let answers_module = answer_module::SkyAnswers::new(task_hash.clone());
-
-        let result = match answers_module.get_answers().await {
-            Ok(answers) => {
-                if answers.is_empty() {
-                    match bot.send_message(msg.chat.id, "❌ Не удалось найти ответы для этого задания.").await {
-                        Ok(_) => Ok(()),
-                        Err(e) => {
-                            log::error!("Failed to send empty answers message: {}", e);
-                            Err(e)
-                        }
-                    }
-                } else {
-                    for solution in answers {
-                        let mut task_message = format!("📝 Задание #{}\n━━━━━━━━━━━━━━━━━━━\n\n", solution.task_number);
-                        task_message.push_str(&format!("{}\n\n", solution.question));
-                        task_message.push_str("🔍 ОТВЕТЫ:\n\n");
-                        if solution.answers.len() > 1 {
-                            for (i, answer) in solution.answers.iter().enumerate() {
-                                task_message.push_str(&format!("✅ Ответ {}: {}\n", i+1, answer));
+        let result = {
+            let answers_module = answer_module::SkyAnswers::new(task_hash.clone());
+            match answers_module.get_answers().await {
+                Ok(answers) => {
+                    if answers.is_empty() {
+                        match bot.send_message(msg.chat.id, "❌ Не удалось найти ответы для этого задания.").await {
+                            Ok(_) => Ok(()),
+                            Err(e) => {
+                                log::error!("Failed to send empty answers message: {}", e);
+                                Err(e)
                             }
-                        } else if let Some(answer) = solution.answers.first() {
-                            task_message.push_str(&format!("✅ Ответ: {}\n", answer));
                         }
-                        task_message.push_str("\n━━━━━━━━━━━━━━━━━━━");
+                    } else {
+                        for solution in &answers {
+                            let task_message = {
+                                let mut msg = format!("📝 Задание #{}\n━━━━━━━━━━━━━━━━━━━\n\n", solution.task_number);
+                                msg.push_str(&format!("{}\n\n", solution.question));
+                                msg.push_str("🔍 ОТВЕТЫ:\n\n");
+                                
+                                if solution.answers.len() > 1 {
+                                    for (i, answer) in solution.answers.iter().enumerate() {
+                                        msg.push_str(&format!("✅ Ответ {}: {}\n", i+1, answer));
+                                    }
+                                } else if let Some(answer) = solution.answers.first() {
+                                    msg.push_str(&format!("✅ Ответ: {}\n", answer));
+                                }
+                                
+                                msg.push_str("\n━━━━━━━━━━━━━━━━━━━");
+                                msg
+                            };
 
-                        if let Err(e) = bot.send_message(msg.chat.id, task_message).await {
-                            log::error!("Failed to send answer: {}", e);
+                            if let Err(e) = bot.send_message(msg.chat.id, &task_message).await {
+                                log::error!("Failed to send answer: {}", e);
+                                return Err(e);
+                            }
+                        }
+                        
+                        if let Err(e) = bot.send_message(msg.chat.id, "✅ Выдача ответов завершена!").await {
+                            log::error!("Failed to send completion message: {}", e);
                             return Err(e);
                         }
+                        
+                        Ok(())
                     }
-                    if let Err(e) = bot.send_message(msg.chat.id, "✅ Выдача ответов завершена!").await {
-                        log::error!("Failed to send completion message: {}", e);
-                        return Err(e);
-                    }
-                    Ok(())
-                }
-            },
-            Err(e) => {
-                log::error!("Error getting answers for hash {}: {}", task_hash, e);
-                match bot.send_message(
-                    msg.chat.id,
-                    format!("❌ Ошибка при получении ответов: {}", e)
-                ).await {
-                    Ok(_) => Ok(()),
-                    Err(send_err) => {
-                        log::error!("Failed to send error message: {}", send_err);
-                        Err(send_err)
+                },
+                Err(e) => {
+                    log::error!("Error getting answers for hash {}: {}", &task_hash, e);
+                    match bot.send_message(
+                        msg.chat.id,
+                        format!("❌ Ошибка при получении ответов: {}", e)
+                    ).await {
+                        Ok(_) => Ok(()),
+                        Err(send_err) => {
+                            log::error!("Failed to send error message: {}", send_err);
+                            Err(send_err)
+                        }
                     }
                 }
             }
@@ -176,6 +168,7 @@ async fn message_handler(bot: Bot, msg: Message) -> ResponseResult<()> {
         if let Err(e) = bot.delete_message(msg.chat.id, processing_msg.id).await {
             log::warn!("Failed to delete processing message: {}", e);
         }
+        
         return result;
     }
 
